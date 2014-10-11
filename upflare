@@ -1,0 +1,155 @@
+#!/usr/bin/env python
+
+import requests
+import argparse
+
+
+BASE_URL = u'https://www.cloudflare.com/api_json.html'
+
+def make_request(a,
+                 api_key,
+                 email,
+                 zone,
+                 extra=None):
+    data = {
+        'a': a,
+        'tkn': api_key,
+        'email': email,
+        'z': zone
+    }
+    if extra:
+        data.update(extra)
+
+    r = requests.post(BASE_URL, data=data)
+    if not (r.status_code >= 200 and r.status_code < 300):
+        raise EnvironmentError('Failed getting a succesful response from CloudFlare')
+
+    return r.json()
+
+def make_args_parser():
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--lookup',
+                        action='store_true',
+                        help='Lookup a DNS record')
+
+    parser.add_argument('--update',
+                        action='store_true',
+                        help='Update a DNS record')
+
+    parser.add_argument('--subdomain',
+                        action='store',
+                        help='Update a DNS record')
+
+    parser.add_argument('--api-key',
+                        action='store',
+                        help='Your CloudFlare API Key')
+
+    parser.add_argument('--email',
+                        action='store',
+                        help='Your CloudFlare Email')
+
+    parser.add_argument('--zone',
+                        action='store',
+                        help='Your CloudFlare Zone (domain)')
+
+    parser.add_argument('--rec-id',
+                        action='store',
+                        help='Your CloudFlare Record ID')
+
+    return parser
+
+def lookup(subdomain, args):
+    c = make_request(a='rec_load_all',
+                     api_key=args.api_key,
+                     email=args.email,
+                     zone=args.zone)
+
+    response = c.get('response')
+    if not response:
+        raise ValueError('Failed getting response from CloudFlare')
+
+    recs = response.get('recs')
+    if not recs:
+        raise ValueError('Failed getting all records from CloudFlare')
+
+    objs = recs.get('objs')
+    if not objs:
+        raise ValueError('Failed getting objects from CloudFlare')
+
+    def filter_rec(x, subdomain, args):
+        display_name = str(x.get('display_name'))
+        s = subdomain.split('.%s' % args.zone)[0]
+
+        return s == display_name
+
+    r = filter(lambda x: filter_rec(x, subdomain, args), objs)
+    if len(r) != 1:
+        raise KeyError('Record not found')
+
+    return {
+        'rec_id': r[0].get('rec_id'),
+        'ttl': r[0].get('ttl')
+    }
+
+def update(rec_id, args):
+    r = requests.get('https://icanhazip.com/')
+    if r.status_code != 200:
+        raise EnvironmentError('Failed getting external IP Address')
+
+    ip = r.text.replace('<strong>', '').replace('</strong>', '').replace('\n', '')
+
+    extra = {
+        'id': rec_id,
+        'type': 'A',
+        'ttl': 300,
+        'content': ip,
+        'name': args.subdomain.split('.%s' % args.zone)[0]
+    }
+
+    c = make_request(a='rec_edit',
+                     api_key=args.api_key,
+                     email=args.email,
+                     zone=args.zone,
+                     extra=extra)
+
+    return {
+        'status': 'success'
+    }
+
+def parse_arguments(args):
+    if not args.api_key:
+        raise KeyError('API Key is required')
+    if not args.email:
+        raise KeyError('Email is required')
+    if not args.zone:
+        raise KeyError('Zone is required')
+
+    if args.lookup and args.update:
+        raise ValueError('Cannot do lookup and update at the same time')
+
+    if args.lookup:
+        if not args.subdomain:
+            raise KeyError('Subdomain is required')
+
+        return lookup(subdomain=args.subdomain,
+                      args=args)
+
+    if args.update:
+        if not args.rec_id:
+            raise KeyError('Rec ID is required')
+
+        return update(rec_id=args.rec_id,
+                      args=args)
+
+    raise NotImplementedError('Nothing to do')
+
+if __name__ == '__main__':
+    parser = make_args_parser()
+
+    try:
+        results = parse_arguments(parser.parse_args())
+    except (KeyError, ValueError, NotImplementedError, EnvironmentError), e:
+        print 'Error: %s' % e.message
+
+    print results
