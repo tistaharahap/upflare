@@ -19,3 +19,10 @@ $ ./upflare --api-key API_KEY --email EMAIL --zone ZONE --lookup --subdomain SUB
 # Update a record
 $ ./upflare --api-key API_KEY --email EMAIL --zone ZONE --lookup --subdomain SUBDOMAIN.ZONE --rec-id REC_ID
 ```
+
+To keep updating records, schedule this script. Scheduling for every 5 minutes on an Ubuntu machine might look like below.
+
+```
+$ crontab -e
+*/5 * * * * /home/ubuntu/bin/upflare --api-key API_KEY --email EMAIL --zone ZONE --lookup --subdomain SUBDOMAIN.ZONE --rec-id REC_ID
+```
